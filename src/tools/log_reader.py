@@ -3,7 +3,7 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
-from src.utils.config import get_settings
+from src.utils import get_settings
 
 @tool
 def read_log_file(filename: str) -> str:

@@ -1,6 +1,6 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from src.utils.config import Settings
+from src.utils import Settings
 
 class GeminiModel:
     """Wrapper for Google Gemini LLM"""

@@ -6,7 +6,7 @@ The active agent flow is:
 
 1. Caller collects user input.
 2. Caller converts prior chat messages to LangChain messages.
-3. Caller invokes `LogAnalyzerAgent.process_query(user_input, chat_history=history)`.
+3. Caller invokes `LogAnalyzerAgent.process_query(user_input, callbacks=progress, chat_history=history)`.
 4. Agent builds a prompt with system instructions, chat history, and user input.
 5. Gemini returns either a direct answer or tool calls.
 6. If tool calls exist, the assistant tool-call message is appended to the evolving `conversation`.
@@ -25,6 +25,7 @@ The active agent flow is:
 - Owns prompt construction.
 - Does not own chat history.
 - Accepts external history through `process_query(user_input, chat_history=None)`.
+- Accepts an optional progress callback for reasoning/tool execution updates.
 
 `src/agents/tools_call.py`
 
@@ -35,6 +36,7 @@ The active agent flow is:
 - Appends both the AI tool-call message and generated `ToolMessage` objects.
 - Catches per-tool exceptions and returns them as tool-result content.
 - Uses a normalized `tool_call_id` returned by `_execute_tool_call()` when constructing `ToolMessage`.
+- Emits optional progress callback events for tool start, tool end, and approval-blocked actions.
 
 ## Tool Layer
 
@@ -87,10 +89,19 @@ Design notes:
 - Streamlit entrypoint.
 - Calls UI components.
 
+`streamlit_app.py`
+
+- Root launcher for Streamlit CLI default discovery.
+- Delegates to `src.main.main`.
+
 `src/ui/state.py`
 
 - Initializes `st.session_state.messages`.
 - Initializes `st.session_state.agent` once per browser session.
+
+`src/ui/helper.py`
+
+- Appends Streamlit chat messages to session state.
 - Converts Streamlit messages to LangChain messages.
 
 `src/ui/chat.py`
@@ -99,8 +110,19 @@ Design notes:
 - Accepts `st.chat_input`.
 - Appends the user message to session state.
 - Converts prior messages to LangChain history.
-- Calls `agent.process_query`.
-- Appends the assistant response to session state.
+- Creates `StreamlitProgress` for the assistant turn.
+- Calls `agent.process_query` with progress callbacks.
+- Appends the assistant response and captured progress steps to session state.
+
+`src/ui/progress.py`
+
+- Defines `StreamlitProgress`.
+- Updates the active Streamlit status container.
+- Captures progress steps for later rendering under assistant messages.
+
+`src/ui/types.py`
+
+- Defines typed message, progress-step, callback, and Streamlit status protocols.
 
 `src/ui/sidebar.py`
 

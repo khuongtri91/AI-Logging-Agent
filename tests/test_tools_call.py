@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage
 
-from src.agents.tools_call import AgentToolsAction
+from src.agents import AgentToolsAction
 
 
 class FakeTool:

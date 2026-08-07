@@ -2,10 +2,12 @@
 
 import streamlit as st
 
-from src.ui.chat import render_chat_interface
-from src.ui.sidebar import render_sidebar
-from src.ui.state import initialize_session_state
-from src.ui.styles import apply_page_styles
+from src.ui import (
+    apply_page_styles,
+    initialize_session_state,
+    render_chat_interface,
+    render_sidebar,
+)
 
 
 st.set_page_config(

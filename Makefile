@@ -14,10 +14,10 @@ install:
 	$(PYTHON) -m pip install -r requirements.txt
 
 run:
-	$(PYTHON) -m streamlit run src/main.py
+	$(PYTHON) -m streamlit run streamlit_app.py
 
 run-ui:
-	$(PYTHON) -m streamlit run src/main.py
+	$(PYTHON) -m streamlit run streamlit_app.py
 
 test:
 	$(PYTHON) -m pytest tests/test_config.py tests/test_response.py tests/test_log_reader.py tests/test_tools_call.py tests/test_model.py tests/test_log_analyzer.py tests/test_main.py tests/test_ui.py -v --cov=src --cov-report=term-missing --cov-fail-under=80

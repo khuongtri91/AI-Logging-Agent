@@ -19,21 +19,23 @@ Important architectural decisions:
 - Tool lookup uses `tools_map` for O(1) lookup instead of scanning the tools list for every tool call.
 - Tool execution errors are returned as `ToolMessage` content so one failed tool call does not crash the whole agent loop.
 - `ToolMessage.tool_call_id` uses the normalized ID returned by `_execute_tool_call()`.
-- `LogAnalyzerAgent` is stateless with respect to chat history. `process_query(user_input, chat_history=None)` accepts LangChain messages from the caller.
+- `LogAnalyzerAgent` is stateless with respect to chat history. `process_query(user_input, callbacks=None, chat_history=None)` accepts LangChain messages and optional progress callbacks from the caller.
 - Streamlit owns chat history in `st.session_state.messages`.
+- Streamlit progress steps are captured through `StreamlitProgress` and persisted on assistant messages.
 - Persistent chat storage has intentionally not been implemented yet.
 
 Current UI:
 
 - Streamlit entrypoint: `src/main.py`
-- UI components: `src/ui/state.py`, `src/ui/chat.py`, `src/ui/sidebar.py`, `src/ui/styles.py`
-- Run with `.venv\Scripts\python.exe -m streamlit run src/main.py`
+- Root launcher: `streamlit_app.py`
+- UI components: `src/ui/state.py`, `src/ui/helper.py`, `src/ui/chat.py`, `src/ui/progress.py`, `src/ui/types.py`, `src/ui/sidebar.py`, `src/ui/styles.py`
+- Run with `streamlit run` from the project root, or `.venv\Scripts\python.exe -m streamlit run streamlit_app.py`
 
 Current test status:
 
 - The test suite uses explicit test files in `Makefile`.
 - Coverage gate is `--cov-fail-under=80`.
-- Last verified result: 29 tests passed, 82.87% coverage.
+- Last verified result: 37 tests passed, 89.03% coverage.
 
 Potential next work:
 

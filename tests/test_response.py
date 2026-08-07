@@ -1,4 +1,4 @@
-from src.utils.response import extract_response_text
+from src.utils import extract_response_text
 
 
 class Response:

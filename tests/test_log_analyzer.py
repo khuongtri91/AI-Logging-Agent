@@ -88,7 +88,7 @@ def test_process_query_executes_tool_calls_before_final_answer(monkeypatch):
 def test_process_query_returns_error_message_on_exception(monkeypatch):
     agent = build_agent(monkeypatch, [AIMessage(content="direct answer")])
 
-    def raise_error(inputs):
+    def raise_error(inputs, callbacks=None):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(agent, "_run_agent_step", raise_error)

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.utils.config import Settings
+from src.utils import Settings
 
 
 def test_settings_accepts_valid_configuration():

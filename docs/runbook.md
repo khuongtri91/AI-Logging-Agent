@@ -16,8 +16,22 @@ python -m pip install -r requirements.txt
 
 ## Run Streamlit App
 
+From bash with the virtual environment active:
+
+```bash
+streamlit run
+```
+
+Or without activating the virtual environment:
+
+```bash
+./.venv/Scripts/python.exe -m streamlit run streamlit_app.py
+```
+
+From PowerShell without activating the virtual environment:
+
 ```powershell
-.venv\Scripts\python.exe -m streamlit run src/main.py
+.venv\Scripts\python.exe -m streamlit run streamlit_app.py
 ```
 
 Or, if `make` is available:
