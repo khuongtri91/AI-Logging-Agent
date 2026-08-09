@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 
-from src.ui import ProgressStep, StreamlitStatus, build_tool_labels, format_tool_label
+from src.ui.helper import build_tool_labels, format_tool_label
+from src.ui.types import ProgressStep, StreamlitStatus
 
 
 class StreamlitProgress:

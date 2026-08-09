@@ -1,7 +1,8 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
 from functools import lru_cache
 from pathlib import Path
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -12,6 +13,7 @@ class Settings(BaseSettings):
     gemini_api_model: str
     gemini_api_key: str
     temperature: float
+    default_user_id: str = "local-user"
 
     # Path
     log_directory: str
@@ -24,14 +26,22 @@ class Settings(BaseSettings):
     @field_validator("gemini_api_key")
     @classmethod
     def validate_gemini_api_key(cls, value: str) -> str:
-        """Validate required configuration"""
+        """Validate required configuration."""
         if not value:
             raise ValueError(
                 "GEMINI_API_KEY not found. "
                 "Please set it in .env file or environment variables."
             )
         return value
-    
+
+    @field_validator("default_user_id")
+    @classmethod
+    def validate_default_user_id(cls, value: str) -> str:
+        """Validate the fallback identity used before authentication exists."""
+        if not value.strip():
+            raise ValueError("DEFAULT_USER_ID must not be empty")
+        return value.strip()
+
     @field_validator("system_prompt_path")
     @classmethod
     def validate_system_prompt_path(cls, value: str) -> str:
@@ -49,16 +59,20 @@ class Settings(BaseSettings):
 
         return value
 
-    def get_system_prompt(self) -> str:
+    def get_system_prompt(self, incident_context: str = "") -> str:
         """Get the system prompt for the agent from the project root."""
         prompt_path = (PROJECT_ROOT / self.system_prompt_path).resolve()
-        return prompt_path.read_text(encoding="utf-8").strip()
+        system_prompt = prompt_path.read_text(encoding="utf-8").strip()
+        if incident_context:
+            system_prompt = f"{system_prompt}\n\n{incident_context}"
+        return system_prompt
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -26,19 +26,133 @@ class FakeStatus:
         self.writes.append(text)
 
 
-def test_initialize_session_state_creates_agent_once(monkeypatch):
-    settings = SimpleNamespace(gemini_api_model="gemini", temperature=0.1, log_directory="logs")
-    agent = SimpleNamespace(settings=settings)
+class FakeStoredMessage:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def model_dump(self, mode="json"):
+        return dict(self.payload)
+
+
+def test_initialize_session_state_uses_cached_stores_and_default_user(monkeypatch):
+    settings = SimpleNamespace(
+        gemini_api_model="gemini",
+        temperature=0.1,
+        log_directory="logs",
+        default_user_id="configured-user",
+    )
+    chat_store = SimpleNamespace()
+    incident_store = SimpleNamespace(
+        get_incidents_for_prompt=lambda user_id: ["incident"],
+        format_for_prompt=lambda incidents: "incident context",
+    )
     fake_streamlit = SimpleNamespace(session_state=SessionState())
 
     monkeypatch.setattr(state, "st", fake_streamlit)
     monkeypatch.setattr(state, "get_settings", lambda: settings)
-    monkeypatch.setattr(state, "LogAnalyzerAgent", lambda: agent)
+    chat_store_calls = []
+    incident_store_calls = []
+    monkeypatch.setattr(
+        state,
+        "get_chat_store",
+        lambda: chat_store_calls.append(None) or chat_store,
+    )
+    monkeypatch.setattr(
+        state,
+        "get_incident_store",
+        lambda: incident_store_calls.append(None) or incident_store,
+    )
 
     assert state.initialize_session_state() is settings
+    assert state.initialize_session_state() is settings
     assert fake_streamlit.session_state.messages == []
-    assert fake_streamlit.session_state.agent is agent
+    assert fake_streamlit.session_state.agent is None
     assert fake_streamlit.session_state.settings is settings
+    assert fake_streamlit.session_state.user_id == "configured-user"
+    assert fake_streamlit.session_state.session_id is None
+    assert len(chat_store_calls) == 1
+    assert len(incident_store_calls) == 1
+
+
+def test_session_helpers_use_explicit_user_and_session_ids(monkeypatch):
+    calls = []
+    chat_store = SimpleNamespace(
+        create_session=lambda user_id, session_id: calls.append(
+            ("create", user_id, session_id)
+        ),
+        list_sessions=lambda user_id: calls.append(("list", user_id)) or ["saved-1"],
+        load=lambda user_id, session_id: calls.append(("load", user_id, session_id))
+        or [FakeStoredMessage({"role": "user", "content": "saved", "steps": []})],
+        save=lambda user_id, session_id, messages: calls.append(
+            ("save", user_id, session_id, messages)
+        ),
+    )
+    agent = SimpleNamespace(set_incident_context=lambda context: setattr(agent, "context", context))
+    incident_store = SimpleNamespace(
+        get_incidents_for_prompt=lambda user_id: ["incident"],
+        format_for_prompt=lambda incidents: "incident context",
+    )
+    fake_streamlit = SimpleNamespace(
+        session_state=SessionState(
+            chat_store=chat_store,
+            incident_store=incident_store,
+            agent=None,
+        )
+    )
+
+    monkeypatch.setattr(helper, "st", fake_streamlit)
+    monkeypatch.setattr(helper, "uuid4", lambda: SimpleNamespace(hex="new-session"))
+    monkeypatch.setattr(
+        helper,
+        "get_log_analyzer_agent",
+        lambda user_id, session_id: agent,
+    )
+
+    assert helper.create_chat_session("user-1") == "new-session"
+    assert helper.list_chat_sessions("user-1") == ["saved-1"]
+    assert helper.get_chat_session_label("user-1", "new-session") == "saved"
+    helper.persist_chat_messages(
+        "user-1",
+        "new-session",
+        [{"role": "assistant", "content": "saved", "steps": []}],
+    )
+
+    assert fake_streamlit.session_state.user_id == "user-1"
+    assert fake_streamlit.session_state.session_id == "new-session"
+    assert fake_streamlit.session_state.messages == [
+        {"role": "user", "content": "saved", "steps": []}
+    ]
+    assert fake_streamlit.session_state.agent is agent
+    assert agent.context == "incident context"
+    assert ("create", "user-1", "new-session") in calls
+    assert ("load", "user-1", "new-session") in calls
+    assert ("list", "user-1") in calls
+    assert calls[-1][0:3] == ("save", "user-1", "new-session")
+
+
+def test_get_chat_session_label_limits_the_first_user_message(monkeypatch):
+    chat_store = SimpleNamespace(
+        load=lambda user_id, session_id: [
+            FakeStoredMessage({"role": "assistant", "content": "Welcome", "steps": []}),
+            FakeStoredMessage(
+                {"role": "user", "content": "01234567890123456789 more", "steps": []}
+            ),
+        ]
+    )
+    fake_streamlit = SimpleNamespace(session_state=SessionState(chat_store=chat_store))
+
+    monkeypatch.setattr(helper, "st", fake_streamlit)
+
+    assert helper.get_chat_session_label("user-1", "session-1") == "01234567890123456789"
+
+
+def test_get_chat_session_label_names_empty_sessions(monkeypatch):
+    chat_store = SimpleNamespace(load=lambda user_id, session_id: [])
+    fake_streamlit = SimpleNamespace(session_state=SessionState(chat_store=chat_store))
+
+    monkeypatch.setattr(helper, "st", fake_streamlit)
+
+    assert helper.get_chat_session_label("user-1", "session-1") == "Untitled chat"
 
 
 def test_append_and_convert_messages(monkeypatch):
@@ -79,7 +193,7 @@ def test_tool_label_helpers_build_labels_from_tool_names():
     }
 
 
-def test_render_chat_interface_processes_prompt(monkeypatch):
+def test_render_chat_interface_processes_prompt_and_persists(monkeypatch):
     calls = []
     fake_streamlit = SimpleNamespace(
         session_state=SessionState(messages=[{"role": "assistant", "content": "prior answer"}]),
@@ -99,6 +213,14 @@ def test_render_chat_interface_processes_prompt(monkeypatch):
     )
 
     monkeypatch.setattr(chat, "st", fake_streamlit)
+    monkeypatch.setattr(chat, "refresh_agent_context", lambda user_id: calls.append(("refresh", user_id)))
+    monkeypatch.setattr(
+        chat,
+        "persist_chat_messages",
+        lambda user_id, session_id, messages: calls.append(
+            ("persist", user_id, session_id, len(messages))
+        ),
+    )
     monkeypatch.setattr(
         chat,
         "append_message",
@@ -107,9 +229,12 @@ def test_render_chat_interface_processes_prompt(monkeypatch):
         ),
     )
 
-    chat.render_chat_interface(agent)
+    chat.render_chat_interface(agent, "user-1", "session-1")
 
+    assert ("refresh", "user-1") in calls
     assert ("process", "What errors?", 1) in calls
+    assert calls.count(("persist", "user-1", "session-1", 2)) == 1
+    assert calls.count(("persist", "user-1", "session-1", 3)) == 1
     assert fake_streamlit.session_state.messages[-2:] == [
         {"role": "user", "content": "What errors?", "steps": []},
         {"role": "assistant", "content": "answer", "steps": []},
@@ -126,28 +251,157 @@ def test_render_chat_messages_shows_empty_state(monkeypatch):
     assert calls == [("info", "Start by asking what log files are available.")]
 
 
-def test_render_sidebar_clears_chat(monkeypatch):
+def test_reset_actions_open_chat_clear_confirmation(monkeypatch):
     calls = []
     fake_streamlit = SimpleNamespace(
-        session_state=SessionState(messages=[{"role": "user", "content": "hello"}]),
-        sidebar=nullcontext(),
-        title=lambda text: calls.append(("title", text)),
-        caption=lambda text: calls.append(("caption", text)),
+        session_state=SessionState(
+            messages=[{"role": "user", "content": "hello"}],
+            user_id="user-1",
+            session_id="session-1",
+        ),
         divider=lambda: calls.append(("divider", None)),
-        subheader=lambda text: calls.append(("subheader", text)),
-        text=lambda text: calls.append(("text", text)),
-        markdown=lambda text: calls.append(("markdown", text)),
-        code=lambda text, language=None: calls.append(("code", text, language)),
-        button=lambda label, use_container_width=False: True,
+        container=lambda **kwargs: nullcontext(),
+        button=lambda label, **kwargs: label == "Clear chat",
+    )
+
+    monkeypatch.setattr(sidebar, "st", fake_streamlit)
+    monkeypatch.setattr(
+        sidebar,
+        "_confirm_clear_chat",
+        lambda: calls.append(("confirm_chat", None)),
+    )
+
+    sidebar._render_reset_actions()
+
+    assert ("confirm_chat", None) in calls
+    assert fake_streamlit.session_state.messages == [{"role": "user", "content": "hello"}]
+    assert fake_streamlit.session_state.session_id == "session-1"
+
+
+def test_reset_actions_open_memory_clear_confirmation(monkeypatch):
+    calls = []
+    fake_streamlit = SimpleNamespace(
+        session_state=SessionState(
+            messages=[],
+            user_id="user-1",
+            session_id="session-1",
+        ),
+        divider=lambda: calls.append(("divider", None)),
+        container=lambda **kwargs: nullcontext(),
+        button=lambda label, **kwargs: label == "Clear memory",
+    )
+
+    monkeypatch.setattr(sidebar, "st", fake_streamlit)
+    monkeypatch.setattr(
+        sidebar,
+        "_confirm_clear_memory",
+        lambda: calls.append(("confirm_memory", None)),
+    )
+
+    sidebar._render_reset_actions()
+
+    assert ("confirm_memory", None) in calls
+
+
+def test_delete_all_chats_resets_session_state(monkeypatch):
+    calls = []
+    chat_store = SimpleNamespace(clear_all=lambda user_id: calls.append(("chat_clear_all", user_id)))
+    fake_streamlit = SimpleNamespace(
+        session_state=SessionState(
+            messages=[{"role": "user", "content": "hello"}],
+            user_id="user-1",
+            session_id="session-1",
+            agent=object(),
+            chat_store=chat_store,
+        ),
         rerun=lambda: calls.append(("rerun", None)),
     )
-    settings = SimpleNamespace(gemini_api_model="gemini", temperature=0.2, log_directory="logs")
 
     monkeypatch.setattr(sidebar, "st", fake_streamlit)
 
-    sidebar.render_sidebar(settings)
+    sidebar._delete_all_chats()
 
+    assert ("chat_clear_all", "user-1") in calls
+    assert ("rerun", None) in calls
     assert fake_streamlit.session_state.messages == []
+    assert fake_streamlit.session_state.session_id is None
+    assert fake_streamlit.session_state.agent is None
+
+
+def test_delete_all_incidents_refreshes_agent_context(monkeypatch):
+    calls = []
+    incident_store = SimpleNamespace(clear=lambda user_id: calls.append(("memory_clear", user_id)))
+    fake_streamlit = SimpleNamespace(
+        session_state=SessionState(
+            user_id="user-1",
+            incident_store=incident_store,
+        ),
+        rerun=lambda: calls.append(("rerun", None)),
+    )
+
+    monkeypatch.setattr(sidebar, "st", fake_streamlit)
+    monkeypatch.setattr(
+        sidebar,
+        "refresh_agent_context",
+        lambda user_id: calls.append(("refresh", user_id)),
+    )
+
+    sidebar._delete_all_incidents()
+
+    assert ("memory_clear", "user-1") in calls
+    assert ("refresh", "user-1") in calls
+    assert ("rerun", None) in calls
+
+
+def test_render_chat_sessions_creates_a_session(monkeypatch):
+    calls = []
+    fake_streamlit = SimpleNamespace(
+        session_state=SessionState(user_id="user-1", session_id=None),
+        divider=lambda: calls.append(("divider", None)),
+        subheader=lambda text: calls.append(("subheader", text)),
+        button=lambda label, **kwargs: label == "New chat",
+        rerun=lambda: calls.append(("rerun", None)),
+    )
+
+    monkeypatch.setattr(sidebar, "st", fake_streamlit)
+    monkeypatch.setattr(
+        sidebar,
+        "create_chat_session",
+        lambda user_id: calls.append(("create", user_id)),
+    )
+    monkeypatch.setattr(sidebar, "list_chat_sessions", lambda user_id: ["session-1"])
+
+    sidebar._render_chat_sessions()
+
+    assert ("create", "user-1") in calls
+    assert ("rerun", None) in calls
+
+
+def test_render_chat_sessions_selects_a_stored_session(monkeypatch):
+    calls = []
+    fake_streamlit = SimpleNamespace(
+        session_state=SessionState(user_id="user-1", session_id="active-1"),
+        divider=lambda: calls.append(("divider", None)),
+        subheader=lambda text: calls.append(("subheader", text)),
+        button=lambda label, **kwargs: label == "Saved session",
+        rerun=lambda: calls.append(("rerun", None)),
+    )
+
+    monkeypatch.setattr(sidebar, "st", fake_streamlit)
+    monkeypatch.setattr(sidebar, "list_chat_sessions", lambda user_id: ["saved-1"])
+    monkeypatch.setattr(
+        sidebar,
+        "get_chat_session_label",
+        lambda user_id, session_id: "Saved session",
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "select_chat_session",
+        lambda user_id, session_id: calls.append(("select", user_id, session_id)),
+    )
+    sidebar._render_chat_sessions()
+
+    assert ("select", "user-1", "saved-1") in calls
     assert ("rerun", None) in calls
 
 

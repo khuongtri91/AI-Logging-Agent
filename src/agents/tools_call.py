@@ -3,7 +3,7 @@ from typing import Protocol
 
 from langchain_core.messages import BaseMessage, ToolMessage
 
-from src.ui import ProgressCallback
+from src.agents.types import ProgressCallback
 
 
 class ToolLike(Protocol):

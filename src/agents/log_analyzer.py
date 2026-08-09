@@ -1,13 +1,14 @@
 from collections.abc import Sequence
+from functools import lru_cache
 from typing import TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from src.agents import AgentToolsAction
+from src.agents.tools_call import AgentToolsAction
+from src.agents.types import ProgressCallback
 from src.model import GeminiModel
 from src.tools import ACTION_TOOL_NAMES, get_agent_tools
-from src.ui import ProgressCallback
 from src.utils import extract_response_text, get_settings
 
 
@@ -33,15 +34,13 @@ class LogAnalyzerAgent:
     - No multi-source integration
     """
 
-    def __init__(self):
-        # Initialize setting
+    def __init__(self, incident_context: str = ""):
         self.settings = get_settings()
+        self.incident_context = incident_context
 
-        # Initialize model
         self.model = GeminiModel(self.settings)
         self.llm = self.model.get_llm()
 
-        # Initialize tools
         self.tools = get_agent_tools()
         self.tools_action = AgentToolsAction(
             self.tools,
@@ -49,19 +48,21 @@ class LogAnalyzerAgent:
             action_tool_names=ACTION_TOOL_NAMES,
         )
         self.tools_map = self.tools_action.tools_map
-
-        # Bind tools to llm
         self.llm_with_tools = self.model.get_llm_with_tools(self.tools)
 
-        # Create prompt
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", self.settings.get_system_prompt()),
+        self.prompt = self._build_prompt()
+
+    def set_incident_context(self, incident_context: str) -> None:
+        """Refresh the system prompt with the latest incident memory."""
+        self.incident_context = incident_context
+        self.prompt = self._build_prompt()
+
+    def _build_prompt(self) -> ChatPromptTemplate:
+        return ChatPromptTemplate.from_messages([
+            ("system", self.settings.get_system_prompt(self.incident_context)),
             MessagesPlaceholder(variable_name="chat_history"),
             ("user", "{input}"),
         ])
-
-        # Chat history is supplied by the caller. Streamlit owns it in
-        # st.session_state.messages.
 
     def _run_agent_step(
         self,
@@ -123,26 +124,21 @@ class LogAnalyzerAgent:
         callbacks: ProgressCallback | None = None,
         chat_history: Sequence[BaseMessage] | None = None,
     ) -> str:
-        """
-        Process a user query and return the response.
-
-        Args:
-            user_input: User's question or command
-            callbacks: Optional progress callback receiver
-            chat_history: Existing LangChain messages supplied by the caller
-
-        Returns:
-            String containing the agent's response
-        """
+        """Process a user query and return the response."""
         try:
-            response = self._run_agent_step({
-                "input": user_input,
-                "chat_history": chat_history or [],
-            }, callbacks=callbacks)
+            response = self._run_agent_step(
+                {
+                    "input": user_input,
+                    "chat_history": chat_history or [],
+                },
+                callbacks=callbacks,
+            )
             return extract_response_text(response)
-        except Exception as e:
-            error_msg = f"Error processing query: {str(e)}"
-            print(f"\n{error_msg}")
-            import traceback
-            traceback.print_exc()
-            return error_msg
+        except Exception as exc:
+            return f"Error processing query: {exc}"
+
+
+@lru_cache(maxsize=128)
+def get_log_analyzer_agent(user_id: str, session_id: str) -> LogAnalyzerAgent:
+    """Return the cached agent resource for one user chat session."""
+    return LogAnalyzerAgent()

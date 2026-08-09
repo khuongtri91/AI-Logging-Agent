@@ -138,6 +138,12 @@ If requirements are unclear:
 
 - Ask clarifying questions before implementing.
 
+Before modifying existing code that changes its architecture, directory structure, public API, or observable behavior:
+
+- Explain the proposed change and its impact.
+- Ask for explicit user confirmation before making the change.
+- Do not treat a request for an improvement as permission to alter the existing design without confirmation.
+
 If there are multiple good solutions:
 
 - Briefly explain the trade-offs.

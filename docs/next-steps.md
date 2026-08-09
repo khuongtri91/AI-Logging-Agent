@@ -32,19 +32,31 @@ Possible design:
 
 ## Persistence
 
-Streamlit history currently lives only in `st.session_state.messages`.
+Streamlit history currently lives in `st.session_state.messages`.
+The UI now persists chat sessions and manually saved incidents through the memory package.
+
+Implemented local persistence:
+
+- `ChatStore` stores normalized chat sessions as JSON.
+- `IncidentStore` stores per-user incident memory as JSON.
+- `UserMemoryStorage` centralizes user/session file paths and creates directories.
+- The sidebar can create and switch persisted sessions; Streamlit state only tracks the active selection.
 
 Future persistence options:
 
-- Local JSON file for development.
 - SQLite for simple local durability.
 - Postgres or another external database for multi-user deployments.
 
-When persistence is added:
+Current wiring notes:
 
 - Keep `LogAnalyzerAgent` stateless.
-- Persist Streamlit message dictionaries or a normalized message table.
+- Persist Streamlit message dictionaries after Pydantic validation.
 - Convert persisted messages to LangChain messages at the UI/application boundary.
+
+Future persistence options:
+
+- Consider an opt-in model-assisted incident-saving workflow, with an explicit user confirmation before persisting the incident and its severity.
+- Add editable session titles derived from the first user message instead of generated session IDs.
 
 ## Testing
 

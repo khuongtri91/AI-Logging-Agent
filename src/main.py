@@ -22,7 +22,11 @@ def main() -> None:
     apply_page_styles()
     settings = initialize_session_state()
     render_sidebar(settings)
-    render_chat_interface(st.session_state.agent)
+    render_chat_interface(
+        st.session_state.agent,
+        st.session_state.user_id,
+        st.session_state.session_id,
+    )
 
 
 if __name__ == "__main__":

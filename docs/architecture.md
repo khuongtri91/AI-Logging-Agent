@@ -23,6 +23,8 @@ The active agent flow is:
 - Owns model initialization.
 - Owns tool binding.
 - Owns prompt construction.
+- Is cached per user and chat session after the user creates or selects that chat.
+- Accepts `incident_context` and refreshes the system prompt from it.
 - Does not own chat history.
 - Accepts external history through `process_query(user_input, chat_history=None)`.
 - Accepts an optional progress callback for reasoning/tool execution updates.
@@ -82,6 +84,33 @@ Design notes:
 - Normalizes model responses into plain text.
 - Handles string content, structured content blocks, and generic objects.
 
+## Memory Layer
+
+`src/memory/storage.py`
+
+- Resolves user-scoped memory paths under `logs/users/<user_id>/`.
+- Creates separate `sessions/` and `incidents/` directories for each user.
+- Creates storage directories on demand.
+- Validates `user_id` and `session_id` as path segments before building file paths.
+- Creates empty session files through `create_session(user_id, session_id)`.
+- Lists stored session IDs through `list_sessions(user_id)`.
+- Raises an explicit error for malformed JSON instead of silently replacing memory.
+
+`src/memory/chat_store.py`
+
+- Persists chat sessions as `sessions/session_<session_id>.json`.
+- Exposes create, list, load, save, and clear operations with explicit user and session IDs.
+- Keeps `ChatStore` focused on loading and saving normalized message records.
+- Stores the same user/assistant message shape used by the Streamlit app, including assistant progress steps.
+
+`src/memory/incident_store.py`
+
+- Persists higher-value incident memory as `incidents/incident.json` per user.
+- Uses UUID hexadecimal incident identifiers, matching chat session IDs and preserving database-safe identifiers.
+- Supports add, list, recent, search, count, clear, and system-prompt formatting.
+- Selects all manually saved `P1` incidents and up to four recent `P2` incidents for prompt context.
+- Formats incident memory for later injection into the system prompt.
+
 ## Streamlit UI Layer
 
 `src/main.py`
@@ -96,20 +125,26 @@ Design notes:
 
 `src/ui/state.py`
 
-- Initializes `st.session_state.messages`.
-- Initializes `st.session_state.agent` once per browser session.
+- Resolves the user identity from an explicit caller value or `Settings.default_user_id`.
+- Initializes `st.session_state.user_id`, `session_id`, `chat_store`, and `incident_store` without eagerly constructing stores.
 
 `src/ui/helper.py`
 
+- Loads persisted chat messages only after a user selects a session.
+- Lazily retrieves the cached agent for the selected user and session.
+- Refreshes the agent's incident context before processing requests.
 - Appends Streamlit chat messages to session state.
 - Converts Streamlit messages to LangChain messages.
+- Manages chat session creation, selection, labels, and persistence.
 
 `src/ui/chat.py`
 
 - Displays existing messages.
 - Accepts `st.chat_input`.
 - Appends the user message to session state.
+- Persists each user and assistant turn to `ChatStore`.
 - Converts prior messages to LangChain history.
+- Refreshes incident context from manually saved incident severities.
 - Creates `StreamlitProgress` for the assistant turn.
 - Calls `agent.process_query` with progress callbacks.
 - Appends the assistant response and captured progress steps to session state.
@@ -127,9 +162,15 @@ Design notes:
 `src/ui/sidebar.py`
 
 - Shows runtime settings.
+- Provides a New chat action and a list of stored chat sessions.
+- Clear chat opens a confirmation dialog before deleting every persisted chat session for the active user.
+- Labels each session from the first 20 characters of its first user message.
 - Shows available tools.
 - Shows example prompts.
-- Provides clear-chat behavior.
+- Shows memory counts and recent incidents.
+- Lets operators save incidents manually through a Streamlit form.
+- Clear memory opens a confirmation dialog before deleting the active user's persisted incident memory.
+- Provides clear-chat and clear-memory actions.
 
 `src/ui/styles.py`
 

@@ -1,18 +1,31 @@
 import streamlit as st
 
-from src.ui import (
-    AgentProcessor,
-    ChatMessage,
-    StreamlitProgress,
+from src.ui.helper import (
     append_message,
     convert_to_langchain_messages,
+    persist_chat_messages,
+    refresh_agent_context,
 )
+from src.ui.progress import StreamlitProgress
+from src.ui.types import AgentProcessor, ChatMessage
 
 
-def render_chat_interface(agent: AgentProcessor) -> None:
+def render_chat_interface(
+    agent: AgentProcessor | None,
+    user_id: str,
+    session_id: str | None,
+) -> None:
     """Render the chat history and process a new user prompt."""
     st.title("AI Log Analyzer")
     st.caption("Ask questions about the log files available to this project.")
+
+    if session_id is None:
+        st.info("Create a new chat from the sidebar to begin.")
+        return
+
+    if agent is None:
+        st.error("Unable to initialize the selected chat session.")
+        return
 
     render_chat_messages(st.session_state.messages)
 
@@ -21,10 +34,13 @@ def render_chat_interface(agent: AgentProcessor) -> None:
         return
 
     append_message("user", prompt)
+    persist_chat_messages(user_id, session_id, st.session_state.messages)
+
     with st.chat_message("user"):
         st.markdown(prompt)
 
     chat_history = convert_to_langchain_messages(st.session_state.messages[:-1])
+    refresh_agent_context(user_id)
 
     with st.chat_message("assistant"):
         status = st.status("Analyzing...", expanded=True)
@@ -43,6 +59,7 @@ def render_chat_interface(agent: AgentProcessor) -> None:
         progress.complete()
 
     append_message("assistant", response, progress.steps)
+    persist_chat_messages(user_id, session_id, st.session_state.messages)
 
 
 def render_chat_messages(messages: list[ChatMessage]) -> None:

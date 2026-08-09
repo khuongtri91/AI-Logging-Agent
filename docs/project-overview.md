@@ -9,6 +9,9 @@ The project is an AI-powered log analysis assistant with a Streamlit web interfa
 - Search logs case-insensitively for a term.
 - Ask natural-language questions about the logs.
 - Preserve conversation context during the current Streamlit browser session.
+- Persist chat sessions and incident memory through file-backed memory stores.
+- Create, switch between, and clear user-scoped persisted chat sessions from the sidebar.
+- Inject manually prioritized incident memory into the system prompt.
 
 ## Current Boundaries
 
@@ -17,7 +20,7 @@ The implemented app is still level 1:
 - It only uses local log files.
 - It does not route between multiple data sources.
 - It does not perform automated remediation.
-- It does not persist chat history outside the current process/browser session.
+- Incident memory is limited to all `P1` incidents and four recent `P2` incidents; `P3` and `info` entries are retained but not injected into prompts.
 
 ## Configuration
 
@@ -29,6 +32,7 @@ Expected environment values include:
 - `GEMINI_API_KEY`
 - `TEMPERATURE`
 - `LOG_DIRECTORY`
+- `DEFAULT_USER_ID`
 
 The system prompt is loaded from the root-level `system_prompt.txt` file by `Settings.get_system_prompt()`. The configured prompt path must point to a file directly under the project root.
 
@@ -39,3 +43,5 @@ Sample logs currently exist in `logs/`:
 - `app.log`
 - `error.log`
 - `system.log`
+
+Runtime memory files are stored under `logs/users/` and ignored by Git.

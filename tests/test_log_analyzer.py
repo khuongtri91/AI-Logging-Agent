@@ -9,8 +9,12 @@ class FakeSettings:
     verbose = False
     max_iterations = 5
 
-    def get_system_prompt(self):
-        return "You analyze logs."
+    def __init__(self):
+        self.received_context = None
+
+    def get_system_prompt(self, incident_context: str = ""):
+        self.received_context = incident_context
+        return f"You analyze logs. {incident_context}".strip()
 
 
 class FakeTool:
@@ -47,17 +51,18 @@ class FakeGeminiModel:
         return self.llm_with_tools
 
 
-def build_agent(monkeypatch, tool_responses):
+def build_agent(monkeypatch, tool_responses, incident_context: str = ""):
     FakeGeminiModel.tool_responses = tool_responses
-    monkeypatch.setattr(log_analyzer, "get_settings", lambda: FakeSettings())
+    settings = FakeSettings()
+    monkeypatch.setattr(log_analyzer, "get_settings", lambda: settings)
     monkeypatch.setattr(log_analyzer, "GeminiModel", FakeGeminiModel)
     monkeypatch.setattr(log_analyzer, "get_agent_tools", lambda: [FakeTool()])
     monkeypatch.setattr(log_analyzer, "ACTION_TOOL_NAMES", set())
-    return log_analyzer.LogAnalyzerAgent()
+    return log_analyzer.LogAnalyzerAgent(incident_context=incident_context), settings
 
 
 def test_process_query_uses_supplied_chat_history(monkeypatch):
-    agent = build_agent(monkeypatch, [AIMessage(content="direct answer")])
+    agent, _ = build_agent(monkeypatch, [AIMessage(content="direct answer")])
     chat_history = [HumanMessage(content="Earlier question")]
 
     result = agent.process_query("What happened?", chat_history=chat_history)
@@ -77,7 +82,7 @@ def test_process_query_executes_tool_calls_before_final_answer(monkeypatch):
             }
         ],
     )
-    agent = build_agent(monkeypatch, [tool_response, AIMessage(content="final answer")])
+    agent, _ = build_agent(monkeypatch, [tool_response, AIMessage(content="final answer")])
 
     result = agent.process_query("Read app.log")
 
@@ -86,7 +91,7 @@ def test_process_query_executes_tool_calls_before_final_answer(monkeypatch):
 
 
 def test_process_query_returns_error_message_on_exception(monkeypatch):
-    agent = build_agent(monkeypatch, [AIMessage(content="direct answer")])
+    agent, _ = build_agent(monkeypatch, [AIMessage(content="direct answer")])
 
     def raise_error(inputs, callbacks=None):
         raise RuntimeError("boom")
@@ -97,3 +102,39 @@ def test_process_query_returns_error_message_on_exception(monkeypatch):
 
     assert result == "Error processing query: boom"
     assert isinstance(agent.tools_map, dict)
+
+
+def test_agent_includes_incident_context_in_system_prompt(monkeypatch):
+    agent, settings = build_agent(
+        monkeypatch,
+        [AIMessage(content="direct answer")],
+        incident_context="PAST INCIDENTS: timeout on orders",
+    )
+
+    agent.set_incident_context("PAST INCIDENTS: pod crash")
+
+    assert settings.received_context == "PAST INCIDENTS: pod crash"
+
+
+def test_get_log_analyzer_agent_caches_by_user_and_session(monkeypatch):
+    created_agents = []
+
+    class FakeAgent:
+        pass
+
+    log_analyzer.get_log_analyzer_agent.cache_clear()
+    monkeypatch.setattr(
+        log_analyzer,
+        "LogAnalyzerAgent",
+        lambda: created_agents.append(FakeAgent()) or created_agents[-1],
+    )
+
+    first = log_analyzer.get_log_analyzer_agent("user-1", "session-1")
+    same_session = log_analyzer.get_log_analyzer_agent("user-1", "session-1")
+    other_session = log_analyzer.get_log_analyzer_agent("user-1", "session-2")
+
+    assert first is same_session
+    assert first is not other_session
+    assert len(created_agents) == 2
+
+    log_analyzer.get_log_analyzer_agent.cache_clear()
