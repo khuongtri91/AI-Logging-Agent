@@ -2,7 +2,7 @@
 
 We are building an AI Logging Agent. The current implemented scope is level 1:
 
-- Read and analyze local log files.
+- Read and analyze local, live Kubernetes, and retained Elasticsearch logs.
 - Answer natural-language questions about logs.
 - Maintain chat history in the caller, not inside the agent.
 
@@ -10,7 +10,7 @@ Current level-1 limitations:
 
 - No routing decisions.
 - No automated actions.
-- No multi-source integration.
+- No automatic source routing beyond model tool selection.
 - Kubernetes restart remediation is wired as a simulated action tool and is blocked unless the latest user turn explicitly approves action execution.
 
 Important architectural decisions:
@@ -36,6 +36,17 @@ Important architectural decisions:
 - Streamlit rebuilds the agent's `incident_context` from `IncidentStore` before each query.
 - Incident memory is saved manually from the sidebar to avoid treating hypothetical user questions as real incidents.
 - Incident prompt injection is based on manually saved incident severities: all `P1` incidents and the 4 most recent `P2` incidents are included; `P3` and `info` incidents are excluded.
+- `src/sources/` implements read-only `KubernetesSource` and `ElasticsearchSource` adapters. Each returns normalized Pydantic `LogEntry` records in a typed `LogFetchResult`; unavailable or failed sources return a result message instead of fake log entries.
+- Source models and enums are centralized in `src/sources/types.py`; the abstract `LogSource` interface is in `base.py`, and shared parsing/formatting helpers are in `helper.py`. Concrete sources implement `_fetch_logs()`.
+- `LogEntry.short()` includes sorted metadata, preserving namespace and other source context in agent prompt lines.
+- Unconfigured source fetches return typed results with a clear configuration-required message rather than only a boolean failure.
+- `src/tools/source_tools.py` exposes `list_log_sources`, `fetch_kubernetes_pod_logs`, and `search_elasticsearch_logs` to the agent. Elasticsearch index selection is intentionally absent from the tool schema; the source enforces the configured data-stream family.
+- Kubernetes sources use `KubernetesSettings`, require a configured kubeconfig, and restrict reads to `K8S_ALLOWED_NAMESPACES` before calling the Kubernetes API. A bare pod target uses the first configured namespace (`default` in the current environment).
+- Live Kubernetes pod-log reads can arrive as a bytes-literal wrapper from the client; `KubernetesSource` decodes the recognized wrapper before splitting and normalizing individual log lines.
+- Elasticsearch receives Fluent Bit CRI container logs in date-suffixed `logs-kubernetes-*` data streams. Searches use the fixed configured `logs-kubernetes-*` pattern, never `.ds-*` backing indices or a model-provided target.
+- Observed Elasticsearch fields include `@timestamp`, `message`, `kubernetes.namespace_name`, `kubernetes.pod_name`, `kubernetes.container_name`, and `kubernetes.host`.
+- The `ai-agent` Elasticsearch user is read-only. Integration will use a local loopback `kubectl port-forward` endpoint on the same machine as the agent.
+- systemd journal logs remain local only, capped at 200 MiB, and are intentionally not attached to Fluent Bit until selective host-log ingestion is needed.
 
 Current UI:
 
@@ -49,10 +60,11 @@ Current test status:
 
 - The test suite uses explicit test files in `Makefile`.
 - Coverage gate is `--cov-fail-under=80`.
-- Last verified result: 57 tests passed, 84.62% coverage.
+- Last verified result: 78 tests passed, 85.76% coverage.
 
 Potential next work:
 
+- Improve model source selection guidance only if production conversations show incorrect tool choice.
 - Add stronger tests around multi-iteration tool calls and Kubernetes approval behavior.
 - Decide how strict the action approval detector should become before real Kubernetes integration.
 - If real Kubernetes execution is added, replace the simulated restart with kubeconfig/context checks.

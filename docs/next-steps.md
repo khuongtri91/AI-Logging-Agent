@@ -2,7 +2,7 @@
 
 ## Near-Term
 
-- Refine the action approval detector before connecting to real Kubernetes APIs.
+- Refine the action approval detector before enabling real Kubernetes remediation.
 - Consider whether `SYSTEM_PROMPT_PATH` should remain configurable or always use root-level `system_prompt.txt`.
 - Add tests for Streamlit helper functions in `src/ui/state.py` where practical.
 - Add a lightweight README for external users once the app flow settles.
@@ -11,22 +11,23 @@
 
 Current state:
 
+- `src/tools/source_tools.py` provides active, read-only Kubernetes and
+  Elasticsearch inspection tools.
 - `src/tools/k8s_tools.py` contains a simulated Kubernetes pod restart tool.
 - It is wired into the active tool list through `get_agent_tools()`.
 - It is treated as an action tool through `ACTION_TOOL_NAMES`.
 - User-facing strings have been normalized to ASCII.
 
-Before enabling Kubernetes tools:
+Before enabling Kubernetes remediation:
 
-- Separate read-only tools from action tools.
 - Keep action tools impossible to execute unless the latest user turn clearly approves.
 - Expand tests that prove action tools are blocked without approval across Streamlit flows.
-- Add configuration checks for kubeconfig/context.
 
 Possible design:
 
 - Keep level-1 log tools in `src/tools/log_reader.py`.
-- Add `src/tools/k8s_tools.py` for Kubernetes actions.
+- Keep read-only source tools in `src/tools/source_tools.py`.
+- Keep `src/tools/k8s_tools.py` for Kubernetes actions.
 - Add metadata to tools, such as `requires_approval = True`.
 - In `AgentToolsAction`, block `requires_approval` tools unless an approval flag is passed by the caller.
 

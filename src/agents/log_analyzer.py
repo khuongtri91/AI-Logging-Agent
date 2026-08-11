@@ -25,13 +25,15 @@ class LogAnalyzerAgent:
 
     Capabilities:
     - Read and analyze log files
+    - Inspect live Kubernetes pod logs
+    - Search retained Kubernetes logs in Elasticsearch
     - Answer questions about logs
     - Maintain conversation history
 
     Limitations:
     - No routing decisions
     - No automated actions
-    - No multi-source integration
+    - No automatic source routing beyond model tool selection
     """
 
     def __init__(self, incident_context: str = ""):

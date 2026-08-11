@@ -1,6 +1,7 @@
 import streamlit as st
 
 from src.memory import IncidentCreateInput
+from src.tools import get_agent_tools
 from src.ui.helper import (
     create_chat_session,
     get_chat_session_label,
@@ -33,7 +34,7 @@ def render_sidebar(settings: Settings) -> None:
 
         st.divider()
         st.subheader("Tools")
-        st.markdown("- `list_log_files`\n- `read_log_file`\n- `search_logs`")
+        st.markdown("\n".join(f"- `{tool.name}`" for tool in get_agent_tools()))
 
         st.divider()
         st.subheader("Examples")

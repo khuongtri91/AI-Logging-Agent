@@ -63,6 +63,92 @@ Design notes:
 - `restart_kubernetes_pod` is treated as an action tool.
 - Action tools are blocked unless the latest user turn includes explicit approval.
 
+`src/tools/source_tools.py`
+
+Active read-only external-source tools:
+
+- `list_log_sources`
+- `fetch_kubernetes_pod_logs`
+- `search_elasticsearch_logs`
+
+Design notes:
+
+- Source adapters are cached per process, while their network clients are scoped
+  to individual fetches and closed afterward.
+- Kubernetes reads accept a pod and optional namespace; a blank namespace lets
+  `KubernetesSource` apply its configured default.
+- Elasticsearch tool schemas never expose an index argument. Searches remain
+  limited to the validated `logs-kubernetes-*` data-stream family.
+- Source tools select the newest matching entries within their configured limit
+  and format that selected set in chronological order, oldest to newest.
+
+## External Log Sources
+
+`src/sources/` provides read-only adapters for two real Kubernetes log sources.
+They normalize external records into `LogEntry` models and return
+`LogFetchResult` objects so unavailable sources are explicit rather than being
+misrepresented as log evidence. The adapters are exposed to the agent through
+the read-only tools in `src/tools/source_tools.py`.
+
+`src/sources/types.py` owns reusable source data types, `base.py` defines the
+`LogSource` interface, and `helper.py` owns shared parsing and prompt-formatting
+functions. Concrete sources implement `_fetch_logs()` after the base interface
+has checked configuration.
+
+`LogFetchRequest` bounds every query to 1--1,440 minutes and 1--200 entries.
+`LogSource.fetch()` catches connector failures and returns a typed result with a
+human-readable message; it does not raise into the agent workflow.
+When a source is not configured, `fetch()` returns a `LogFetchResult` with a
+clear configuration-required message instead of only a boolean failure.
+`LogEntry.short()` includes sorted metadata such as namespace, container, and
+host so prompt context preserves the source location of each log line.
+
+### Kubernetes Workload Logs
+
+- `KubernetesSource` provides live pod and container logs.
+- `ElasticsearchSource` provides searchable retained workload logs.
+- The agent will keep these sources separate because Kubernetes API log reads and
+  Elasticsearch searches have different freshness, filters, and failure modes.
+- `KubernetesSettings` uses `K8S_KUBECONFIG`, `K8S_CONTEXT`,
+  `K8S_ALLOWED_NAMESPACES`, and `K8S_REQUEST_TIMEOUT_SECONDS`. Pod reads accept
+  `pod` or `namespace/pod`. A bare pod uses the first configured allow-listed
+  namespace (currently `default`); namespaces outside the allow-list are
+  rejected before the Kubernetes API is called.
+- The Kubernetes client may return a bytes-literal wrapper (`b"...\\n"`) for
+  pod logs. `KubernetesSource` recognizes and safely decodes that wrapper before
+  normalizing one `LogEntry` per log line.
+
+### Elasticsearch Log Store
+
+- Fluent Bit runs as a DaemonSet and tails CRI container logs from
+  `/var/log/containers/*.log`.
+- Fluent Bit enriches records with Kubernetes metadata and writes them to
+  date-suffixed `logs-kubernetes-*` Elasticsearch data streams.
+- The Elasticsearch deployment is a single ECK node scheduled on the dedicated
+  logging node.
+- Elasticsearch queries use the configured `logs-kubernetes-*` data-stream
+  pattern, never `.ds-*` backing indices or a model-provided index target.
+- The observed query fields are `@timestamp`, `message`,
+  `kubernetes.namespace_name`, `kubernetes.pod_name`,
+  `kubernetes.container_name`, and `kubernetes.host`.
+- `ElasticsearchSettings` reads `ELASTICSEARCH_URL`, `ELASTICSEARCH_USERNAME`,
+  `ELASTICSEARCH_PASSWORD`, `ELASTICSEARCH_DATA_STREAM`, and
+  `ELASTICSEARCH_REQUEST_TIMEOUT_SECONDS`. Validation permits only the expected
+  `logs-kubernetes-*` data-stream family.
+- Integration uses the dedicated `ai-agent` read-only Elasticsearch user through
+  a local loopback `kubectl port-forward` endpoint.
+- Searches enforce a time range, result limit, request timeout, and read-only
+  access to the configured data-stream family.
+
+### Node Journal Logs
+
+- systemd journal logs are deliberately excluded from Fluent Bit and
+  Elasticsearch for now to avoid storing unnecessary node-level noise.
+- The journal size is capped at 200 MiB. The operator can increase it later if
+  node troubleshooting needs a longer local history.
+- A future journald integration should use a selective Systemd input, separate
+  from workload logs, rather than forwarding every node journal entry.
+
 ## Model Layer
 
 `src/model/gemini.py`

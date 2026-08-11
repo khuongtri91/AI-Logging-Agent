@@ -49,7 +49,7 @@ http://localhost:8501
 ## Run Tests
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/test_config.py tests/test_response.py tests/test_log_reader.py tests/test_tools_call.py tests/test_model.py tests/test_log_analyzer.py tests/test_main.py tests/test_ui.py tests/test_memory.py -v --cov=src --cov-report=term-missing --cov-fail-under=80
+.venv\Scripts\python.exe -m pytest tests/test_config.py tests/test_response.py tests/test_log_reader.py tests/test_tools_call.py tests/test_source_tools.py tests/test_model.py tests/test_log_analyzer.py tests/test_main.py tests/test_ui.py tests/test_memory.py tests/test_sources.py -v --cov=src --cov-report=term-missing --cov-fail-under=80
 ```
 
 Or:

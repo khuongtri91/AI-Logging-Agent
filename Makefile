@@ -20,7 +20,7 @@ run-ui:
 	$(PYTHON) -m streamlit run streamlit_app.py
 
 test:
-	$(PYTHON) -m pytest tests/test_config.py tests/test_response.py tests/test_log_reader.py tests/test_tools_call.py tests/test_model.py tests/test_log_analyzer.py tests/test_main.py tests/test_ui.py tests/test_memory.py -v --cov=src --cov-report=term-missing --cov-fail-under=80
+	$(PYTHON) -m pytest tests/test_config.py tests/test_response.py tests/test_log_reader.py tests/test_tools_call.py tests/test_source_tools.py tests/test_model.py tests/test_log_analyzer.py tests/test_main.py tests/test_ui.py tests/test_memory.py tests/test_sources.py -v --cov=src --cov-report=term-missing --cov-fail-under=80
 
 clean:
 	$(PYTHON) -c "import pathlib, shutil; skipped = {'.venv', '.git', '.agents'}; [shutil.rmtree(path) for path in pathlib.Path('.').rglob('__pycache__') if path.is_dir() and not skipped.intersection(path.parts)]; [path.unlink() for path in pathlib.Path('.').rglob('*.pyc') if path.is_file() and not skipped.intersection(path.parts)]"

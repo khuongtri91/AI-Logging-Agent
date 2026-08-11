@@ -7,6 +7,9 @@ The project is an AI-powered log analysis assistant with a Streamlit web interfa
 - List available `.log` files from the configured log directory.
 - Read a selected log file.
 - Search logs case-insensitively for a term.
+- Check availability of live Kubernetes and Elasticsearch log sources.
+- Fetch recent logs from a Kubernetes pod in an allow-listed namespace.
+- Search retained Kubernetes workload logs in the configured Elasticsearch data stream.
 - Ask natural-language questions about the logs.
 - Preserve conversation context during the current Streamlit browser session.
 - Persist chat sessions and incident memory through file-backed memory stores.
@@ -17,8 +20,8 @@ The project is an AI-powered log analysis assistant with a Streamlit web interfa
 
 The implemented app is still level 1:
 
-- It only uses local log files.
-- It does not route between multiple data sources.
+- The model chooses between local, Kubernetes, and Elasticsearch read-only tools;
+  there is no deterministic source-routing layer yet.
 - It does not perform automated remediation.
 - Incident memory is limited to all `P1` incidents and four recent `P2` incidents; `P3` and `info` entries are retained but not injected into prompts.
 
@@ -33,6 +36,13 @@ Expected environment values include:
 - `TEMPERATURE`
 - `LOG_DIRECTORY`
 - `DEFAULT_USER_ID`
+- `K8S_KUBECONFIG`
+- `K8S_CONTEXT`
+- `K8S_ALLOWED_NAMESPACES`
+- `ELASTICSEARCH_URL`
+- `ELASTICSEARCH_USERNAME`
+- `ELASTICSEARCH_PASSWORD`
+- `ELASTICSEARCH_DATA_STREAM`
 
 The system prompt is loaded from the root-level `system_prompt.txt` file by `Settings.get_system_prompt()`. The configured prompt path must point to a file directly under the project root.
 
